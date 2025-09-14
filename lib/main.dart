@@ -162,14 +162,46 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initModel() async {
     try {
       final vlm = CactusVLM();
-      await vlm.download(
-        modelUrl: 'https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/SmolVLM-256M-Instruct-Q8_0.gguf',
-        mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf',
+      
+      // Try to download the SmolVLM2-2.2B-Instruct model (larger, better quality)
+      // bool downloadSuccess = await vlm.download(
+      //   modelUrl: 'https://huggingface.co/ggml-org/SmolVLM2-2.2B-Instruct-GGUF/resolve/main/SmolVLM2-2.2B-Instruct-Q8_0.gguf',
+      //   mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM2-2.2B-Instruct-GGUF/resolve/main/mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf',
+      //   modelFilename: 'SmolVLM2-2.2B-Instruct-Q8_0.gguf',
+      //   mmprojFilename: 'mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf',
+      //   onProgress: (progress, status, isError) {
+      //     print('$status ${progress != null ? '${(progress * 100).toInt()}%' : ''}');
+      //     if (isError) {
+      //       print('Download error: $status');
+      //     }
+      //   },
+      // );
+      
+      // Commented out 500M model (smaller, faster)
+      bool downloadSuccess = await vlm.download(
+        modelUrl: 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q8_0.gguf',
+        mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
+        modelFilename: 'SmolVLM-500M-Instruct-Q8_0.gguf',
+        mmprojFilename: 'mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
         onProgress: (progress, status, isError) {
           print('$status ${progress != null ? '${(progress * 100).toInt()}%' : ''}');
+          if (isError) {
+            print('Download error: $status');
+          }
         },
       );
-      await vlm.init(contextSize: 2048);
+      
+      if (!downloadSuccess) {
+        throw Exception('Model download failed - check internet connection');
+      }
+      
+      // Only initialize if download was successful
+      await vlm.init(
+        contextSize: 2048,
+        modelFilename: 'SmolVLM-500M-Instruct-Q8_0.gguf',
+        mmprojFilename: 'mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
+      );
+      
       _vlm = vlm; 
       setState(() {
         _isLoading = false;
@@ -179,7 +211,7 @@ class _ChatScreenState extends State<ChatScreen> {
       print('Error initializing model: $e');
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to load model bruh: $e';
+        _errorMessage = 'Failed to load model: $e\n\nPlease check your internet connection and try again.';
       });
     }
   }
@@ -278,12 +310,12 @@ class _ChatScreenState extends State<ChatScreen> {
               CircularProgressIndicator(strokeWidth: 3),
               SizedBox(height: 20),
               Text(
-                'Loading SmolVLM Model...',
+                'Loading SmolVLM',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
               ),
               SizedBox(height: 8),
               Text(
-                'This may take a few minutes on first launch',
+                'First download will take longer',
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
             ],
@@ -329,7 +361,7 @@ class _ChatScreenState extends State<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Solari Vision Chat', style: TextStyle(fontSize: 18)),
-            Text('SmolVLM-256M', style: TextStyle(fontSize: 12, color: Colors.grey[300])),
+            Text('SmolVLM', style: TextStyle(fontSize: 12, color: Colors.grey[300])),
           ],
         ),
         backgroundColor: Colors.blue[700],
