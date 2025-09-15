@@ -4,6 +4,8 @@ import 'package:cactus/types.dart';
 import 'package:cactus/vlm.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 
 class MessageWithImages {
   final ChatMessage message;
@@ -162,47 +164,70 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initModel() async {
     try {
       final vlm = CactusVLM();
-      
-      // Try to download the SmolVLM2-2.2B-Instruct model (larger, better quality)
-      // bool downloadSuccess = await vlm.download(
-      //   modelUrl: 'https://huggingface.co/ggml-org/SmolVLM2-2.2B-Instruct-GGUF/resolve/main/SmolVLM2-2.2B-Instruct-Q8_0.gguf',
-      //   mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM2-2.2B-Instruct-GGUF/resolve/main/mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf',
-      //   modelFilename: 'SmolVLM2-2.2B-Instruct-Q8_0.gguf',
-      //   mmprojFilename: 'mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf',
-      //   onProgress: (progress, status, isError) {
-      //     print('$status ${progress != null ? '${(progress * 100).toInt()}%' : ''}');
-      //     if (isError) {
-      //       print('Download error: $status');
-      //     }
-      //   },
-      // );
-      
-      // Commented out 500M model (smaller, faster)
-      bool downloadSuccess = await vlm.download(
-        modelUrl: 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q8_0.gguf',
-        mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
-        modelFilename: 'SmolVLM-500M-Instruct-Q8_0.gguf',
-        mmprojFilename: 'mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
-        onProgress: (progress, status, isError) {
-          print('$status ${progress != null ? '${(progress * 100).toInt()}%' : ''}');
-          if (isError) {
-            print('Download error: $status');
-          }
-        },
-      );
-      
-      if (!downloadSuccess) {
-        throw Exception('Model download failed - check internet connection');
+
+      // Helper function to copy model files from assets to a writable directory
+      Future<File> copyFromAssets(String assetPath, String fileName) async {
+        final byteData = await rootBundle.load(assetPath);
+        
+        // Try using getApplicationDocumentsDirectory instead
+        Directory directory;
+        try {
+          directory = await getApplicationDocumentsDirectory();
+        } catch (e) {
+          // Fallback to application support directory
+          directory = await getApplicationSupportDirectory();
+        }
+        
+        final filePath = '${directory.path}/$fileName';
+        final file = File(filePath);
+        
+        // Create directory if it doesn't exist
+        await file.parent.create(recursive: true);
+        
+        // Only copy if file doesn't exist or is empty (to avoid re-copying large files)
+        if (!await file.exists() || await file.length() == 0) {
+          print('Copying $fileName to ${file.path}');
+          await file.writeAsBytes(byteData.buffer.asUint8List(), flush: true);
+          print('Copied ${await file.length()} bytes');
+        } else {
+          print('Model file already exists: ${file.path}');
+        }
+        
+        return file;
       }
+
+      // Copy both model and mmproj files from assets
+      final modelFile = await copyFromAssets(
+        'assets/models/SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
+        'SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
+      );
+
+      final mmprojFile = await copyFromAssets(
+        'assets/models/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
+        'mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
+      );
+
+      print('Model file path: ${modelFile.path}');
+      print('Mmproj file path: ${mmprojFile.path}');
+      print('Model file exists: ${await modelFile.exists()}');
+      print('Mmproj file exists: ${await mmprojFile.exists()}');
+
+      // Try using just the filename instead of full path
+      final modelFileName = 'SmolVLM2-500M-Video-Instruct-Q8_0.gguf';
+      final mmprojFileName = 'mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf';
       
-      // Only initialize if download was successful
+      print('Trying with relative filenames:');
+      print('Model filename: $modelFileName');
+      print('Mmproj filename: $mmprojFileName');
+
+      // Initialize CactusVLM with just the filenames
       await vlm.init(
         contextSize: 2048,
-        modelFilename: 'SmolVLM-500M-Instruct-Q8_0.gguf',
-        mmprojFilename: 'mmproj-SmolVLM-500M-Instruct-Q8_0.gguf',
+        modelFilename: modelFileName,
+        mmprojFilename: mmprojFileName,
       );
-      
-      _vlm = vlm; 
+
+      _vlm = vlm;
       setState(() {
         _isLoading = false;
         _errorMessage = null;
@@ -211,10 +236,12 @@ class _ChatScreenState extends State<ChatScreen> {
       print('Error initializing model: $e');
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to load model: $e\n\nPlease check your internet connection and try again.';
+        _errorMessage =
+            'Failed to load model from assets: $e\n\nPlease ensure the model files exist in assets/models/.';
       });
     }
   }
+
 
   Future<void> _sendMessage() async {
     if (_vlm == null || _controller.text.trim().isEmpty) return;
